@@ -1,0 +1,142 @@
+import { credentialKey, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
+import { z } from 'zod'
+import {
+  PROFILE_CONTEXT_UNAVAILABLE, WEBSITE_PROFILE_PREFIX, type AuthorizationAuthority,
+} from './authorization.js'
+import { WEBSITE_SESSION_ORIGIN, websiteSessionSchema } from './protocol.js'
+import type { WebsiteSession } from './protocol.js'
+
+export interface WebsiteSessionFence {
+  accountId: string
+  epoch: string
+}
+
+const grantSchema = z.strictObject({
+  version: z.literal(2),
+  origin: z.literal(WEBSITE_SESSION_ORIGIN),
+  profileId: z.string().regex(/^chat-profile:[a-f0-9]{64}$/),
+  websiteAccountId: z.string().min(1).max(512).nullable(),
+  session: websiteSessionSchema.nullable(),
+})
+type WebsiteCredentials = Pick<CredentialProvider, 'readRecord' | 'modifyRecord' | 'deleteRecord'>
+type WebsiteAuthority = Pick<AuthorizationAuthority, 'getSnapshot'>
+
+/** Derives a profile-specific key in the shared vault, independently of DSH's own login. */
+export class WebsiteSessionStore {
+  private readonly profileKey: ReturnType<typeof credentialKey> | null
+  private pending: Promise<void> = Promise.resolve()
+  private writeRevision = 0
+  private clearing = false
+
+  constructor(
+    private readonly credentials: WebsiteCredentials,
+    private readonly authority: WebsiteAuthority,
+    private readonly profileId: string | null,
+  ) {
+    this.profileKey = profileId !== null && /^chat-profile:[a-f0-9]{64}$/.test(profileId)
+      ? credentialKey('dsh-deepseek-chat-entry', `website-${profileId.slice(WEBSITE_PROFILE_PREFIX.length)}`)
+      : null
+  }
+
+  /** Capture before the controller awaits its fence, so an already-issued RPC stays fenced. */
+  captureRevision(): number { return this.writeRevision }
+
+  private current(fence: WebsiteSessionFence, signal: AbortSignal): boolean {
+    const state = this.authority.getSnapshot()
+    return !signal.aborted && state.status === 'authorized'
+      && state.error === (this.profileKey === null ? PROFILE_CONTEXT_UNAVAILABLE : null)
+      && (this.profileKey === null || fence.accountId === this.profileId)
+      && state.accountId === fence.accountId && state.epoch === fence.epoch
+  }
+  private unchanged(fence: WebsiteSessionFence, signal: AbortSignal, revision: number): boolean {
+    return !this.clearing && revision === this.writeRevision && this.current(fence, signal)
+  }
+  private sessionFromRecord(payload: unknown): WebsiteSession | null {
+    const grant = grantSchema.safeParse(payload)
+    if (!grant.success || grant.data.profileId !== this.profileId || !grant.data.session
+      || grant.data.session.userId !== grant.data.websiteAccountId) return null
+    return { ...grant.data.session }
+  }
+  private payload(session: WebsiteSession | null) {
+    return {
+      version: 2, origin: WEBSITE_SESSION_ORIGIN, profileId: this.profileId,
+      websiteAccountId: session?.userId ?? null, session,
+    }
+  }
+  /** Keep clearing and writes ordered; queued work checks its captured generation again. */
+  private async exclusive<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.pending
+    let release!: () => void
+    this.pending = new Promise<void>(resolve => { release = resolve })
+    await previous
+    try { return await operation() }
+    finally { release() }
+  }
+
+  async load(
+    fence: WebsiteSessionFence, signal: AbortSignal,
+    revision = this.writeRevision,
+  ): Promise<WebsiteSession | null> {
+    const profileKey = this.profileKey
+    if (profileKey === null) return null
+    try {
+      return await this.exclusive(async () => {
+        if (!this.unchanged(fence, signal, revision)) return null
+        const record = await this.credentials.readRecord(profileKey)
+        if (!this.unchanged(fence, signal, revision)) return null
+        if (record !== undefined) {
+          return record.kind === 'grant' ? this.sessionFromRecord(record.payload) : null
+        }
+        return null
+      })
+    } catch { throw new Error('无法读取 CHAT 登录。') }
+  }
+
+  async save(
+    fence: WebsiteSessionFence, session: WebsiteSession, signal: AbortSignal,
+    revision = this.writeRevision,
+  ): Promise<boolean> {
+    const profileKey = this.profileKey
+    if (profileKey === null) return false
+    const parsed = websiteSessionSchema.safeParse(session)
+    if (!parsed.success || !this.unchanged(fence, signal, revision)) return false
+    try {
+      return await this.exclusive(async () => {
+        if (!this.unchanged(fence, signal, revision)) return false
+        let accepted = false
+        await this.credentials.modifyRecord(profileKey, async () => {
+          // The provider may wait for its cross-process write lock before invoking us.
+          if (!this.unchanged(fence, signal, revision)) return undefined
+          accepted = true
+          return { kind: 'grant', payload: this.payload(parsed.data) }
+        })
+        return accepted && this.unchanged(fence, signal, revision)
+      })
+    } catch { throw new Error('无法保存 CHAT 登录。') }
+  }
+
+  async clear(fence: WebsiteSessionFence, signal: AbortSignal): Promise<boolean> {
+    const profileKey = this.profileKey
+    // A volatile guest cannot have a plugin-owned persistent grant. Its normal
+    // website logout must remain available, without touching any vault record.
+    if (profileKey === null) return this.current(fence, signal)
+    if (this.clearing || !this.current(fence, signal)) return false
+    // Close the Host write barrier synchronously, before waiting for any queued save.
+    this.clearing = true
+    this.writeRevision++
+    try {
+      return await this.exclusive(async () => {
+        if (!this.current(fence, signal)) return false
+        let cleared = false
+        await this.credentials.modifyRecord(profileKey, async () => {
+          if (!this.current(fence, signal)) return undefined
+          cleared = true
+          // A durable empty grant prevents an old account-keyed grant being restored again.
+          return { kind: 'grant', payload: this.payload(null) }
+        })
+        return cleared && this.current(fence, signal)
+      })
+    } catch { throw new Error('无法清除 CHAT 登录。') }
+    finally { this.clearing = false }
+  }
+}
