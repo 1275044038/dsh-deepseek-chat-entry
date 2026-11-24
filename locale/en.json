@@ -1,0 +1,30 @@
+{
+  "meta": { "title": "DeepSeek Chat" },
+  "ui": {
+    "DeepSeek 聊天": "DeepSeek Chat",
+    "加载中": "Loading",
+    "就绪": "Ready",
+    "未登录": "Signed out",
+    "离线": "Offline",
+    "刷新": "Refresh",
+    "DeepSeek 官网聊天": "DeepSeek website chat",
+    "正在加载 DeepSeek 官网…": "Loading the DeepSeek website…",
+    "网页加载失败。请检查网络后点击刷新。": "The page failed to load. Check your connection and click Refresh.",
+    "在 DSH 内使用 DeepSeek 官网聊天。登录记忆只保存官网授权的三个固定 key，不读聊天正文、Cookie 或密码。": "Chat on the real DeepSeek website inside DSH. Sign-in memory stores only the three fixed website authorization keys; never chat content, cookies, or passwords.",
+    "官网登录记忆": "Website sign-in memory",
+    "读取中…": "Reading…",
+    "已记忆": "Stored",
+    "未记忆": "Not stored",
+    "不可用（当前 profile 不支持持久化）": "Unavailable (this profile does not support persistence)",
+    "读取失败": "Read failed",
+    "清除登录": "Clear sign-in",
+    "清除中…": "Clearing…",
+    "已清除官网登录记忆。": "Website sign-in memory cleared.",
+    "无法清除 CHAT 登录。": "Unable to clear the CHAT sign-in.",
+    "设置不可用": "Settings unavailable",
+    "关闭": "Close",
+    "当前 DSH 版本不支持官网登录记忆，请升级 DSH。": "This DSH version does not support website sign-in memory. Upgrade DSH.",
+    "未连接 DSH 服务。": "Not connected to the DSH service.",
+    "官网登录记忆操作失败。": "The sign-in memory operation failed."
+  }
+}
