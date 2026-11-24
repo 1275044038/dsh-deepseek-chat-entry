@@ -22,6 +22,14 @@ try {
     platform: 'node',
     target: 'node22',
     jsx: 'automatic',
+    banner: {
+      // react-dom/server's Node build is CJS and requires builtins such as
+      // "stream"; pure ESM output has no require, so supply one for esbuild's
+      // dynamic-require shim ("Dynamic require of \"stream\" is not supported").
+      // Assign through globalThis with a unique import binding: host-entry and
+      // server tests already declare their own top-level createRequire/require.
+      js: "import { createRequire as __dshChatEntryCreateRequire } from 'node:module'; globalThis.require = __dshChatEntryCreateRequire(import.meta.url);",
+    },
     plugins: [{
       // Client DI integration tests exercise the real controller while keeping
       // presentation modules inert. Native guest/React behavior is not tested here.
