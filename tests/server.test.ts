@@ -265,3 +265,97 @@ test('without profileContext the service is volatile and never touches the vault
   assert.equal(await invoke('clearWebsiteSession', { metadata, epoch: state.epoch }), true)
   assert.equal(vault.calls.length, 0)
 })
+
+
+test('conversation list and summary read the website on the Host and return only bounded results', async t => {
+  const { ChatEntryController } = await compile(t)
+  const profileDir = path.join(process.cwd(), 'node_modules', '.cache', 'fixture-profile-conv')
+  const vault = memoryVault()
+  const ctx = new Context()
+  ctx.provide('profileContext', { dir: profileDir })
+  ctx.provide('credentials', vault.provider)
+  // Auxiliary model route fixtures: the session projection supplies the current route.
+  ctx.provide('sessions', { list: () => [{ id: 'session-fixture' }] })
+  ctx.provide('sessionProjections', {
+    snapshot: () => ({ values: { modelSelection: { lastUsed: { provider: 'deepseek', model: 'deepseek-chat' } } } }),
+  })
+  ctx.provide('llm', {
+    prepareCall: async (config: unknown) => ({
+      config,
+      stream: async function* () {
+        yield { type: 'block-start', index: 0, blockType: 'text' }
+        yield { type: 'text-delta', index: 0, text: '官网对话摘要正文' }
+        yield { type: 'finish', reason: { kind: 'stop' } }
+      },
+    }),
+  })
+  const peer = hostAccess(ctx)
+  const registry = ctx.plugin(TypertRegistry); await registry
+  const gateway = ctx.plugin(TypertGateway); await gateway
+  const controller = ctx.plugin(ChatEntryController); await controller
+  const realFetch = globalThis.fetch
+  let apiMode: 'ok' | 'expired' = 'ok'
+  const seenUrls: string[] = []
+  globalThis.fetch = (async (url: string) => {
+    seenUrls.push(String(url))
+    const envelope = apiMode === 'expired'
+      ? { code: 40003, msg: 'invalid token', data: null }
+      : String(url).includes('fetch_page')
+        ? { code: 0, data: { biz_code: 0, biz_data: { chat_sessions: [
+            { id: 'conv-1', title: '测试对话', updated_at: 1_700_000_000 },
+            { id: 'conv-2', title: '', updated_at: 1_700_000_001 },
+          ] } } }
+        : { code: 0, data: { biz_code: 0, biz_data: { chat_messages: [
+            { role: 'USER', fragments: [{ type: 'REQUEST', content: '你好' }] },
+            { role: 'ASSISTANT', fragments: [{ type: 'RESPONSE', content: '您好，有什么可以帮您？' }] },
+          ] } } }
+    return { ok: true, status: 200, json: async () => envelope, text: async () => JSON.stringify(envelope) }
+  }) as typeof fetch
+  t.after(async () => {
+    globalThis.fetch = realFetch
+    await controller.dispose(); await gateway.dispose(); await registry.dispose()
+  })
+  const invoke = (method: string, args: object, signal?: AbortSignal) => ctx.typertGateway.invoke({
+    namespace: 'dshDeepseekChatEntry', method, args, peer, ...(signal ? { signal } : {}),
+  })
+  const authorized = await invoke('authorization', { metadata })
+  assert.equal(authorized.status, 'authorized')
+  assert.equal(await invoke('saveWebsiteSession', { metadata, epoch: authorized.epoch, session: fictionalSession }), true)
+
+  await t.test('list returns bounded rows and normalizes empty titles', async () => {
+    const rows = await invoke('listWebsiteConversations', { metadata, epoch: authorized.epoch })
+    assert.deepEqual(rows, [
+      { id: 'conv-1', title: '测试对话', updatedAt: 1_700_000_000_000 },
+      { id: 'conv-2', title: '未命名对话', updatedAt: 1_700_000_001_000 },
+    ])
+    assert.ok(seenUrls.some(u => u.includes('/api/v0/chat_session/fetch_page')))
+  })
+
+  await t.test('summarize fetches the chosen conversation and returns only the model summary', async () => {
+    const summary = await invoke('summarizeWebsiteConversation', {
+      metadata, epoch: authorized.epoch, sessionId: 'session-fixture', conversationId: 'conv-1',
+    })
+    assert.equal(summary, '官网对话摘要正文')
+    assert.ok(seenUrls.some(u => u.includes('/api/v0/chat/history_messages') && u.includes('chat_session_id=conv-1')))
+  })
+
+  await t.test('summarize rejects missing arguments and stale epochs', async () => {
+    await assert.rejects(invoke('summarizeWebsiteConversation', { metadata, epoch: authorized.epoch, sessionId: 'session-fixture' }),
+      (error: { code?: string }) => error.code === 'gateway/arguments-invalid')
+    await assert.rejects(invoke('listWebsiteConversations', { metadata, epoch: 'epoch-stale' }),
+      (error: { code?: string; message?: string }) => error.code === 'gateway/internal' && String(error.message).includes('登录'))
+  })
+
+  await t.test('expired website token surfaces an actionable gateway error', async () => {
+    apiMode = 'expired'
+    await assert.rejects(invoke('listWebsiteConversations', { metadata, epoch: authorized.epoch }),
+      (error: { code?: string; message?: string }) => error.code === 'gateway/internal' && String(error.message).includes('过期'))
+    apiMode = 'ok'
+  })
+
+  await t.test('without a stored website session the reader asks the user to log in', async () => {
+    assert.equal(await invoke('clearWebsiteSession', { metadata, epoch: authorized.epoch }), true)
+    await assert.rejects(invoke('listWebsiteConversations', { metadata, epoch: authorized.epoch }),
+      (error: { code?: string; message?: string }) => error.code === 'gateway/internal' && String(error.message).includes('登录'))
+  })
+})
