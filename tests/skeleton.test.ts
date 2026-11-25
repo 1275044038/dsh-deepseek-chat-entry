@@ -36,7 +36,7 @@ test('manifest targets the 0.2.2 line only and keeps distribution rules', () => 
   ])
   assert.equal(manifest.exports['./client'].default, './lib/client.js')
   assert.equal(manifest.exports['./locale/*'], './locale/*')
-  assert.deepEqual(manifest.files, ['lib', 'cordis.patch.yml', 'README.md', 'assets/icon.svg', 'locale'])
+  assert.deepEqual(manifest.files, ['lib', 'cordis.patch.yml', 'README.md', 'LICENSE', 'assets/icon.svg', 'locale'])
   for (const hook of ['build', 'prepare', 'prepack', 'postpack', 'prepublish', 'prepublishOnly', 'publish', 'preinstall', 'install', 'postinstall']) {
     assert.equal(manifest.scripts[hook], undefined)
   }

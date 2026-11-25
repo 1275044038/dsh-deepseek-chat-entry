@@ -13,7 +13,7 @@ for (const hook of ['build', 'prepare', 'prepack', 'postpack', 'prepublish', 'pr
   assert(!manifest.scripts?.[hook], `Git distribution must not contain the ${hook} script`)
 }
 assert(!manifest.workspaces, 'Git distribution must not require a workspace build')
-assert.deepEqual([...manifest.files].sort(), ['README.md', 'assets/icon.svg', 'cordis.patch.yml', 'lib', 'locale'])
+assert.deepEqual([...manifest.files].sort(), ['LICENSE', 'README.md', 'assets/icon.svg', 'cordis.patch.yml', 'lib', 'locale'])
 assert.equal(manifest.exports['./locale/*'], './locale/*')
 const expectedTitles = { en: 'DeepSeek Chat', 'zh-CN': 'DeepSeek 聊天' }
 for (const [language, title] of Object.entries(expectedTitles)) {
