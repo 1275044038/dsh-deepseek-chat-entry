@@ -44,6 +44,19 @@ export declare const websiteSessionSchema: z.ZodObject<{
     userId: z.ZodString;
     deviceId: z.ZodString;
 }, z.core.$strict>;
+/** Re-exported bounded identifier for Host-side defensive parsing of remote ids. */
+export declare const chatIdentifierSchema: z.ZodString;
+/** One website chat session row, as shown in the @ reference picker. */
+export interface WebsiteConversation {
+    id: string;
+    title: string;
+    updatedAt: number;
+}
+export declare const websiteConversationSchema: z.ZodObject<{
+    id: z.ZodString;
+    title: z.ZodString;
+    updatedAt: z.ZodNumber;
+}, z.core.$strict>;
 /** Explicit strict descriptors use the public registry; no source-mode method discovery. */
 export declare const CHAT_ENTRY_DESCRIPTORS: readonly InvocationDescriptor[];
 export declare const CHAT_ENTRY_REMOTE_CONTRIBUTION: TypertRemoteContribution;
@@ -55,6 +68,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
         'dshDeepseekChatEntry/loadWebsiteSession': (metadata: ChatEntryClientMetadata, epoch: string, signal?: AbortSignal) => Promise<RemoteResult<WebsiteSession | null>>;
         'dshDeepseekChatEntry/saveWebsiteSession': (metadata: ChatEntryClientMetadata, epoch: string, session: WebsiteSession, signal?: AbortSignal) => Promise<RemoteResult<boolean>>;
         'dshDeepseekChatEntry/clearWebsiteSession': (metadata: ChatEntryClientMetadata, epoch: string, signal?: AbortSignal) => Promise<RemoteResult<boolean>>;
+        'dshDeepseekChatEntry/listWebsiteConversations': (metadata: ChatEntryClientMetadata, epoch: string, signal?: AbortSignal) => Promise<RemoteResult<WebsiteConversation[]>>;
+        'dshDeepseekChatEntry/summarizeWebsiteConversation': (metadata: ChatEntryClientMetadata, epoch: string, sessionId: string, conversationId: string, signal?: AbortSignal) => Promise<RemoteResult<string>>;
     }
     interface TypertRemoteNamespaceMap {
         dshDeepseekChatEntry: import('@deepseek-ai/dsh-typert-protocol').TypertRemoteNamespace<'dshDeepseekChatEntry'>;
