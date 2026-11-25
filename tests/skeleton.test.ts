@@ -31,6 +31,8 @@ test('manifest targets the 0.2.2 line only and keeps distribution rules', () => 
     '@deepseek-ai/dsh-client-ui-sidebar',
     '@deepseek-ai/dsh-api-gateway',
     '@deepseek-ai/dsh-client-ui-settings',
+    '@deepseek-ai/dsh-client-ui-conversation',
+    '@deepseek-ai/dsh-client-ui-input-trigger',
   ])
   assert.equal(manifest.exports['./client'].default, './lib/client.js')
   assert.equal(manifest.exports['./locale/*'], './locale/*')

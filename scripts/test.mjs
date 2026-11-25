@@ -9,7 +9,10 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const testsDirectory = path.join(projectRoot, 'tests')
 const files = (await readdir(testsDirectory)).filter(file => file.endsWith('.test.ts')).sort()
 if (files.length === 0) throw new Error('No tests/*.test.ts files found')
-const outputDirectory = await mkdtemp(path.join(tmpdir(), 'dsh-chat-entry-tests-'))
+// Keep the output inside the project so externalized @deepseek-ai packages (which
+// read their own ../package.json via createRequire(import.meta.url)) resolve against
+// the real node_modules instead of a detached OS temp dir.
+const outputDirectory = await mkdtemp(path.join(projectRoot, '.tmp-test-'))
 let exitCode = 1
 try {
   await build({
@@ -18,6 +21,7 @@ try {
     outdir: outputDirectory,
     outExtension: { '.js': '.mjs' },
     bundle: true,
+    packages: 'external',
     format: 'esm',
     platform: 'node',
     target: 'node22',
