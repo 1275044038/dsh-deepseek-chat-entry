@@ -1,5 +1,7 @@
 {
-  "meta": { "title": "DeepSeek Chat" },
+  "meta": {
+    "title": "DeepSeek Chat"
+  },
   "ui": {
     "DeepSeek 聊天": "DeepSeek Chat",
     "加载中": "Loading",
@@ -25,6 +27,10 @@
     "关闭": "Close",
     "当前 DSH 版本不支持官网登录记忆，请升级 DSH。": "This DSH version does not support website sign-in memory. Upgrade DSH.",
     "未连接 DSH 服务。": "Not connected to the DSH service.",
-    "官网登录记忆操作失败。": "The sign-in memory operation failed."
+    "官网登录记忆操作失败。": "The sign-in memory operation failed.",
+    "DeepSeek 对话": "DeepSeek Chats",
+    "请先打开 DeepSeek 聊天面板登录官网。": "Open the DeepSeek chat panel and sign in to the website first.",
+    "官网对话摘要生成失败。": "Failed to summarize the website conversation.",
+    "无效的官网对话引用。": "Invalid website conversation reference."
   }
 }

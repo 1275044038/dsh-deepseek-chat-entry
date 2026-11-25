@@ -4,12 +4,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { DesktopBrowserBridge } from '@deepseek-ai/dsh-client-ui-sidebar-browser/types'
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { CHAT_PANEL, CHAT_SETTINGS_SECTION, HOST_ENTRY_ID } from './identity.js'
 import { readHostLanguage, translate, type ChatLanguage } from './i18n.js'
 import { authorizationSchema, CHAT_ENTRY_REMOTE_CONTRIBUTION } from './protocol.js'
-import type { AuthorizationState, ChatEntryClientMetadata } from './protocol.js'
+import type { AuthorizationState, ChatEntryClientMetadata, WebsiteConversation } from './protocol.js'
+import { createChatReferenceSource } from './chat-reference.js'
 import type { ChatEntryBridge, ChatEntryViewState, WebsiteSurfaceState } from './bridge.js'
 import { ChatPanel } from './chat-panel.js'
 import { ChatEntryPanelIcon, ChatEntrySettingsIcon } from './icons.js'
@@ -181,20 +183,65 @@ export function apply(ctx: Context): void {
     }
     publish()
   }
-  async function websiteRequest<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  async function websiteRequest<T>(
+    operation: (signal: AbortSignal) => Promise<T>,
+    timeoutMs = 12_000,
+    externalSignal?: AbortSignal,
+  ): Promise<T> {
     const request = new AbortController()
     const cancel = () => request.abort()
     lifetime.signal.addEventListener('abort', cancel, { once: true })
-    if (lifetime.signal.aborted) request.abort()
+    externalSignal?.addEventListener('abort', cancel, { once: true })
+    if (lifetime.signal.aborted || externalSignal?.aborted) request.abort()
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       return await Promise.race([operation(request.signal), new Promise<never>((_resolve, reject) => {
         const abort = () => reject(new Error('Website session request cancelled'))
         request.signal.addEventListener('abort', abort, { once: true })
         if (request.signal.aborted) abort()
-        timer = setTimeout(() => request.abort(), 12_000)
+        timer = setTimeout(() => request.abort(), timeoutMs)
       })])
-    } finally { clearTimeout(timer); lifetime.signal.removeEventListener('abort', cancel); request.abort() }
+    } finally {
+      clearTimeout(timer)
+      lifetime.signal.removeEventListener('abort', cancel)
+      externalSignal?.removeEventListener('abort', cancel)
+      request.abort()
+    }
+  }
+  // @-reference data closures. Unlike the website-session bridge these never
+  // touch the published UI snapshot: a list failure yields an empty menu, a
+  // summarize failure rejects the codec and blocks the send.
+  const LIST_CACHE_MS = 5_000
+  let cachedList: readonly WebsiteConversation[] | null = null
+  let cachedListAt = 0
+  let cachedListGeneration = -1
+  async function listConversations(signal: AbortSignal): Promise<readonly WebsiteConversation[]> {
+    if (cachedList && cachedListGeneration === authorizationGeneration && Date.now() - cachedListAt < LIST_CACHE_MS) {
+      return cachedList
+    }
+    const generation = authorizationGeneration
+    const fence = sessionFence(generation)
+    if (!fence) throw new Error(translate(language, '请先打开 DeepSeek 聊天面板登录官网。'))
+    const result = await websiteRequest(async requestSignal => {
+      await connectRemote()
+      if (!remoteContext || requestSignal.aborted || !sameSessionFence(generation, fence)) throw new Error('Website session invalidated')
+      return remoteContext.remote.dshDeepseekChatEntry.listWebsiteConversations(metadata, fence.epoch, requestSignal)
+    }, 12_000, signal)
+    if (!result.ok) throw new Error(result.error.message)
+    cachedList = result.value; cachedListAt = Date.now(); cachedListGeneration = generation
+    return result.value
+  }
+  async function summarizeConversation(sessionId: string, conversationId: string, signal: AbortSignal): Promise<string> {
+    const generation = authorizationGeneration
+    const fence = sessionFence(generation)
+    if (!fence) throw new Error(translate(language, '请先打开 DeepSeek 聊天面板登录官网。'))
+    const result = await websiteRequest(async requestSignal => {
+      await connectRemote()
+      if (!remoteContext || requestSignal.aborted || !sameSessionFence(generation, fence)) throw new Error('Website session invalidated')
+      return remoteContext.remote.dshDeepseekChatEntry.summarizeWebsiteConversation(metadata, fence.epoch, sessionId, conversationId, requestSignal)
+    }, 65_000, signal)
+    if (!result.ok) throw new Error(result.error.message || translate(language, '官网对话摘要生成失败。'))
+    return result.value
   }
   const bridge: ChatEntryBridge = {
     getSnapshot: () => cached,
@@ -287,6 +334,16 @@ export function apply(ctx: Context): void {
       const stop = form.subscribe(sync); sync()
       return () => { stop(); if (preferencesForm === form) { preferencesForm = null; publish() } }
     })
+  })
+  // The @-reference source lives in its own injection so a missing input-trigger
+  // service (older shell) never blocks the sidebar entry. registerSource returns
+  // the effect disposer; the source closes over the data closures above.
+  ctx.inject(['inputTriggers'], child => {
+    child.effect(() => child.inputTriggers.registerSource(createChatReferenceSource({
+      list: listConversations,
+      summarize: summarizeConversation,
+      translate: text => translate(language, text),
+    })))
   })
   // The official sidebar wiring calls ctx.layout.selectPanel(id) when the row is
   // clicked; we never call selectPanel ourselves. The keyed main panel unmounts

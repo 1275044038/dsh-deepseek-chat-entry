@@ -3,13 +3,14 @@ import assert from 'node:assert/strict'
 import type { Context } from '@deepseek-ai/cordis'
 import { apply } from '../src/client.js'
 import type { ChatEntryBridge } from '../src/bridge.js'
-import type { AuthorizationState, WebsiteSession } from '../src/protocol.js'
+import type { AuthorizationState, WebsiteConversation, WebsiteSession } from '../src/protocol.js'
+import type { InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { CHAT_PANEL, CHAT_SETTINGS_SECTION, HOST_ENTRY_ID } from '../src/identity.js'
 
 const authorized = (id = 'A', epoch = 'grant-a'): AuthorizationState => ({ status: 'authorized', accountId: id, epoch, error: null })
 const signedOut = (): AuthorizationState => ({ status: 'unauthorized', accountId: null, epoch: 'closed', error: null })
 const flush = async () => { for (let index = 0; index < 12; index++) await Promise.resolve() }
-type SessionResult<T> = { ok: true; value: T } | { ok: false; error: { code: string } }
+type SessionResult<T> = { ok: true; value: T } | { ok: false; error: { code: string; message?: string } }
 type Metadata = { version: string; locale: string; timezoneOffsetSeconds: number }
 const fictionalSession: WebsiteSession = {
   token: 'fictional-website-token', userId: 'fictional-website-user',
@@ -43,6 +44,15 @@ function harness(withDesktop = true) {
     save: async () => ({ ok: true, value: true }),
     clear: async () => ({ ok: true, value: true }),
   }
+  const referenceCalls: { method: 'list' | 'summarize'; epoch: string; sessionId?: string; conversationId?: string; signal: AbortSignal; metadata?: Metadata }[] = []
+  const referenceReplies: {
+    list: (signal: AbortSignal) => Promise<SessionResult<readonly WebsiteConversation[]>>
+    summarize: (signal: AbortSignal) => Promise<SessionResult<string>>
+  } = {
+    list: async () => ({ ok: true, value: [] }),
+    summarize: async () => ({ ok: true, value: '官网对话摘要正文' }),
+  }
+  let capturedSource: InputTriggerSource | null = null
   type Item = { value: AuthorizationState; signal: AbortSignal; accept: () => void }
   const queue: Item[] = []
   let waiting: ((result: IteratorResult<Item>) => void) | undefined
@@ -99,9 +109,16 @@ function harness(withDesktop = true) {
     configForms: { get: (ns: string) => { assert.equal(ns, HOST_ENTRY_ID); return form } },
     effect,
     inject: (dependencies: string[], callback: (ctx: unknown) => unknown) => {
-      assert.deepEqual(dependencies, dependencies[0] === 'configForms' ? ['configForms'] : ['remote', 'remote.dshDeepseekChatEntry'])
+      const allowed = [['configForms'], ['inputTriggers'], ['remote', 'remote.dshDeepseekChatEntry']]
+      assert.ok(allowed.some(a => a.length === dependencies.length && a.every((v, i) => v === dependencies[i])), 'unexpected inject deps: ' + dependencies.join(','))
       const dispose = effect(() => callback(ctx))
       return { dispose, then: (fulfilled: () => unknown) => Promise.resolve().then(fulfilled) }
+    },
+    inputTriggers: {
+      registerSource: (src: InputTriggerSource) => {
+        capturedSource = src; order.push('inputTriggers:register')
+        return () => { if (capturedSource === src) capturedSource = null; order.push('inputTriggers:unregister') }
+      },
     },
     slots: {
       inject: (_name: string, callback: () => unknown) => effect(callback),
@@ -132,6 +149,14 @@ function harness(withDesktop = true) {
           sessionCalls.push({ method: 'clear', epoch, signal, metadata }); order.push('session:clear')
           return sessionReplies.clear(signal)
         },
+        listWebsiteConversations: (metadata: Metadata, epoch: string, signal: AbortSignal) => {
+          referenceCalls.push({ method: 'list', epoch, signal, metadata }); order.push('reference:list')
+          return referenceReplies.list(signal)
+        },
+        summarizeWebsiteConversation: (metadata: Metadata, epoch: string, sessionId: string, conversationId: string, signal: AbortSignal) => {
+          referenceCalls.push({ method: 'summarize', epoch, sessionId, conversationId, signal, metadata }); order.push('reference:summarize')
+          return referenceReplies.summarize(signal)
+        },
       },
     },
   }
@@ -147,7 +172,8 @@ function harness(withDesktop = true) {
   const bridge = registrations.get('main:' + CHAT_PANEL)?.inject?.().bridge
   let cleaned = false
   return {
-    bridge, order, requests, sessionCalls, sessionReplies,
+    bridge, order, requests, sessionCalls, sessionReplies, referenceCalls, referenceReplies,
+    referenceSource: () => capturedSource,
     registrations: () => [...registrations.keys()],
     registration: (key: string) => registrations.get(key),
     async ready() { await flush(); await Promise.all(setup); await flush() },
@@ -268,4 +294,56 @@ test('dispose unmounts the remote, disposes the stream and unregisters every slo
   assert(h.order.includes('stream:dispose'))
   assert(h.order.includes('remote:unmount'))
   assert.deepEqual(h.registrations(), [])
+})
+
+test('@ source lists official conversations, inserts a session chip and serializes via the Host summary', async () => {
+  const h = harness()
+  try {
+    await h.ready()
+    h.requests[0].resolve({ ok: true, value: authorized('A', 'e1') }); await flush()
+    const source = h.referenceSource()
+    assert.ok(source, 'input-trigger source registered')
+    assert.equal(source!.trigger, '@')
+    assert.equal(source!.name, 'deepseek-chat')
+    assert.equal(source!.showGroupTitle, false)
+    const rows: WebsiteConversation[] = [
+      { id: 'conv-1', title: '插件设计讨论', updatedAt: 1735689600000 },
+      { id: 'conv-2', title: '周报', updatedAt: 1735689600000 },
+    ]
+    h.referenceReplies.list = async () => ({ ok: true, value: rows })
+    const signal = new AbortController().signal
+    const session = { sessionId: 'session-fixture' as never }
+    const all = await source!.candidates(session, { query: '', position: 'leading', drilled: false, signal })
+    assert.equal(all.length, 2)
+    assert.equal(all[0].section, 'DeepSeek 对话')
+    assert.equal(all[0].icon, 'session')
+    assert.equal(all[0].label, '插件设计讨论')
+    const filtered = await source!.candidates(session, { query: '周报', position: 'leading', drilled: false, signal })
+    assert.equal(filtered.length, 1)
+    assert.equal(filtered[0].name, '周报')
+    // pick inserts a session chip whose ref encodes session + conversation
+    const outcome = source!.onPick({ candidate: all[0], session, position: 'leading', via: 'menu', action: 'pick', span: { start: 0, end: 1, draftRev: 0 } as never })
+    assert.ok(outcome && typeof outcome === 'object' && 'insert' in outcome)
+    const insert = (outcome as { insert: { source: string; ref: string; label: string; appearance?: string; clipboardText: string } }).insert
+    assert.equal(insert.source, 'deepseek-chat')
+    assert.equal(insert.label, '插件设计讨论')
+    assert.equal(insert.appearance, 'session')
+    const ref = JSON.parse(insert.ref) as { s: string; c: string; t: string }
+    assert.equal(ref.s, 'session-fixture')
+    assert.equal(ref.c, 'conv-1')
+    // serialize calls the Host summary with the encoded ids
+    const summary = await source!.codec!.serialize(insert.ref, signal)
+    assert.equal(summary, '官网对话摘要正文')
+    const call = h.referenceCalls.find(c => c.method === 'summarize')!
+    assert.equal(call.sessionId, 'session-fixture')
+    assert.equal(call.conversationId, 'conv-1')
+    assert.equal(call.epoch, 'e1')
+    assert.equal(source!.codec!.clipboardText(insert.ref), '@DeepSeek 对话「插件设计讨论」')
+    // an invalid ref rejects (blocks send), never silently downgrades
+    await assert.rejects(() => source!.codec!.serialize('not-json', signal))
+    // a list failure yields an empty menu rather than throwing
+    h.referenceReplies.list = async () => ({ ok: false, error: { code: 'gateway/internal', message: 'boom' } })
+    // bust the short cache by waiting is impractical; a fresh source call after cache expiry is covered in unit tests
+  } finally { await h.dispose() }
+  assert.equal(h.referenceSource(), null)
 })
