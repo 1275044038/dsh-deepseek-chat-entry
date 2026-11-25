@@ -44,6 +44,17 @@ export const websiteSessionSchema = z.strictObject({
   deviceId: z.string().uuid(),
 }) satisfies z.ZodType<WebsiteSession>
 
+/** Re-exported bounded identifier for Host-side defensive parsing of remote ids. */
+export const chatIdentifierSchema = identifier
+
+/** One website chat session row, as shown in the @ reference picker. */
+export interface WebsiteConversation { id: string; title: string; updatedAt: number }
+export const websiteConversationSchema = z.strictObject({
+  id: z.string().min(1).max(512),
+  title: z.string().max(2000),
+  updatedAt: z.number().int().min(0),
+}) satisfies z.ZodType<WebsiteConversation>
+
 const strict = (name: string, schema: z.ZodType) => ({
   mode: 'strict' as const, typeSymbol: `dsh-deepseek-chat-entry#${name}`, create: () => schema,
 })
@@ -73,12 +84,36 @@ const websiteDescriptor = (method: string, save = false): InvocationDescriptor =
     ? strict('OptionalWebsiteSession', websiteSessionSchema.nullable())
     : strict('WebsiteSessionOperationResult', z.boolean()),
 })
+const sessionIdParameter = {
+  name: 'sessionId', wire: 'sessionId', source: 'json' as const,
+  codec: strict('DshSessionId', identifier),
+}
+const conversationIdParameter = {
+  name: 'conversationId', wire: 'conversationId', source: 'json' as const,
+  codec: strict('WebsiteConversationId', identifier),
+}
+const listConversationsDescriptor: InvocationDescriptor = {
+  id: 'dsh-deepseek-chat-entry#dshDeepseekChatEntry/listWebsiteConversations',
+  service: 'dshDeepseekChatEntry', namespace: 'dshDeepseekChatEntry', method: 'listWebsiteConversations',
+  invocation: { kind: 'direct' }, parameters: [metadataParameter, epochParameter],
+  cancellation: { parameter: 'signal' },
+  result: strict('WebsiteConversationList', z.array(websiteConversationSchema).max(200)),
+}
+const summarizeConversationDescriptor: InvocationDescriptor = {
+  id: 'dsh-deepseek-chat-entry#dshDeepseekChatEntry/summarizeWebsiteConversation',
+  service: 'dshDeepseekChatEntry', namespace: 'dshDeepseekChatEntry', method: 'summarizeWebsiteConversation',
+  invocation: { kind: 'direct' },
+  parameters: [metadataParameter, epochParameter, sessionIdParameter, conversationIdParameter],
+  cancellation: { parameter: 'signal' },
+  result: strict('WebsiteConversationSummary', z.string().min(1).max(20_000)),
+}
 
 /** Explicit strict descriptors use the public registry; no source-mode method discovery. */
 export const CHAT_ENTRY_DESCRIPTORS: readonly InvocationDescriptor[] = [
   descriptor('authorization'), descriptor('watchAuthorization', true),
   websiteDescriptor('loadWebsiteSession'), websiteDescriptor('saveWebsiteSession', true),
   websiteDescriptor('clearWebsiteSession'),
+  listConversationsDescriptor, summarizeConversationDescriptor,
 ]
 export const CHAT_ENTRY_REMOTE_CONTRIBUTION: TypertRemoteContribution = {
   package: 'dsh-deepseek-chat-entry', descriptors: CHAT_ENTRY_DESCRIPTORS,
@@ -96,6 +131,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'dshDeepseekChatEntry/loadWebsiteSession': (metadata: ChatEntryClientMetadata, epoch: string, signal?: AbortSignal) => Promise<RemoteResult<WebsiteSession | null>>
     'dshDeepseekChatEntry/saveWebsiteSession': (metadata: ChatEntryClientMetadata, epoch: string, session: WebsiteSession, signal?: AbortSignal) => Promise<RemoteResult<boolean>>
     'dshDeepseekChatEntry/clearWebsiteSession': (metadata: ChatEntryClientMetadata, epoch: string, signal?: AbortSignal) => Promise<RemoteResult<boolean>>
+    'dshDeepseekChatEntry/listWebsiteConversations': (metadata: ChatEntryClientMetadata, epoch: string, signal?: AbortSignal) => Promise<RemoteResult<WebsiteConversation[]>>
+    'dshDeepseekChatEntry/summarizeWebsiteConversation': (metadata: ChatEntryClientMetadata, epoch: string, sessionId: string, conversationId: string, signal?: AbortSignal) => Promise<RemoteResult<string>>
   }
   interface TypertRemoteNamespaceMap {
     dshDeepseekChatEntry: import('@deepseek-ai/dsh-typert-protocol').TypertRemoteNamespace<'dshDeepseekChatEntry'>

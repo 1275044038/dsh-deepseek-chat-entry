@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   CHAT_ENTRY_DESCRIPTORS, CHAT_ENTRY_HOST_CONTRIBUTION, CHAT_ENTRY_REMOTE_CONTRIBUTION,
   WEBSITE_SESSION_ORIGIN, authorizationSchema, clientMetadataSchema, websiteSessionSchema,
+  websiteConversationSchema,
 } from '../src/protocol.js'
 
 const metadata = { version: '0.1.0', locale: 'zh-CN', timezoneOffsetSeconds: -28_800 }
@@ -36,10 +37,11 @@ test('website session schema enforces the three fixed fields', () => {
 })
 
 test('descriptors use the entry package, service key and strict codecs', () => {
-  assert.equal(CHAT_ENTRY_DESCRIPTORS.length, 5)
+  assert.equal(CHAT_ENTRY_DESCRIPTORS.length, 7)
   const byMethod = new Map(CHAT_ENTRY_DESCRIPTORS.map(d => [d.method, d]))
   assert.deepEqual([...byMethod.keys()].sort(), [
-    'authorization', 'clearWebsiteSession', 'loadWebsiteSession', 'saveWebsiteSession', 'watchAuthorization',
+    'authorization', 'clearWebsiteSession', 'listWebsiteConversations', 'loadWebsiteSession',
+    'saveWebsiteSession', 'summarizeWebsiteConversation', 'watchAuthorization',
   ])
   for (const d of CHAT_ENTRY_DESCRIPTORS) {
     assert.equal(d.id, `dsh-deepseek-chat-entry#dshDeepseekChatEntry/${d.method}`)
@@ -59,6 +61,10 @@ test('descriptors use the entry package, service key and strict codecs', () => {
   assert.deepEqual(byMethod.get('clearWebsiteSession')?.parameters.map(p => p.name), ['metadata', 'epoch'])
   assert.equal(byMethod.get('loadWebsiteSession')?.result.typeSymbol, 'dsh-deepseek-chat-entry#OptionalWebsiteSession')
   assert.equal(byMethod.get('saveWebsiteSession')?.result.typeSymbol, 'dsh-deepseek-chat-entry#WebsiteSessionOperationResult')
+  assert.deepEqual(byMethod.get('listWebsiteConversations')?.parameters.map(p => p.name), ['metadata', 'epoch'])
+  assert.deepEqual(byMethod.get('summarizeWebsiteConversation')?.parameters.map(p => p.name), ['metadata', 'epoch', 'sessionId', 'conversationId'])
+  assert.equal(byMethod.get('listWebsiteConversations')?.result.typeSymbol, 'dsh-deepseek-chat-entry#WebsiteConversationList')
+  assert.equal(byMethod.get('summarizeWebsiteConversation')?.result.typeSymbol, 'dsh-deepseek-chat-entry#WebsiteConversationSummary')
   for (const p of byMethod.get('saveWebsiteSession')!.parameters) {
     assert.equal(p.source, 'json')
     assert.equal(p.codec.mode, 'strict')
@@ -73,4 +79,12 @@ test('contributions never expose website credentials to the model', () => {
   assert.deepEqual(CHAT_ENTRY_HOST_CONTRIBUTION.schemas, [])
   assert.deepEqual(CHAT_ENTRY_HOST_CONTRIBUTION.model, { services: [], events: [], objects: [] })
   assert.equal(CHAT_ENTRY_HOST_CONTRIBUTION.invocations, CHAT_ENTRY_DESCRIPTORS)
+})
+
+test('websiteConversationSchema validates a bounded row', () => {
+  const row = { id: 'abc', title: '标题', updatedAt: 1_700_000_000_000 }
+  assert.deepEqual(websiteConversationSchema.parse(row), row)
+  assert.equal(websiteConversationSchema.safeParse({ id: '', title: 'x', updatedAt: 0 }).success, false)
+  assert.equal(websiteConversationSchema.safeParse({ id: 'a', title: 'x', updatedAt: -1 }).success, false)
+  assert.equal(websiteConversationSchema.safeParse({ ...row, extra: 1 }).success, false)
 })
