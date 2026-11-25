@@ -7,6 +7,7 @@ import {
   websiteSessionCaptureScript,
   websiteSessionRestoreScript,
 } from './website-session.js'
+import { websiteEnvironmentNoticeScript } from './website-notice.js'
 
 const WEBSITE_URL = 'https://chat.deepseek.com/'
 const WEBSITE_ORIGIN = 'https://chat.deepseek.com'
@@ -217,8 +218,25 @@ export function WebsiteSurface({ bridge }: { bridge: ChatEntryBridge }) {
       void (async () => {
         const ok = await prepareSession()
         if (!ok || !active() || !approvedOrigin()) return
+        dismissEnvironmentNotice()
         captureSession()
       })()
+    }
+    // The website renders its environment notice after the document boots, so a
+    // single dom-ready pass can miss it. Retry on a short bounded schedule; the
+    // dismissal is idempotent and stops once the document revision changes.
+    const dismissEnvironmentNotice = () => {
+      if (!active() || !approvedOrigin() || !documentReady) return
+      void executeScript(websiteEnvironmentNoticeScript()).catch(() => {})
+    }
+    const scheduleNoticeDismissal = () => {
+      const revision = documentRevision
+      for (const delay of [0, 700, 1800, 3500]) {
+        setTimeout(() => {
+          if (events.signal.aborted || revision !== documentRevision) return
+          dismissEnvironmentNotice()
+        }, delay)
+      }
     }
 
     current.addEventListener('dom-ready', () => {
@@ -226,6 +244,7 @@ export function WebsiteSurface({ bridge }: { bridge: ChatEntryBridge }) {
       if (!approvedOrigin()) return
       documentReady = true
       syncSession()
+      scheduleNoticeDismissal()
     }, { signal: events.signal })
     current.addEventListener('did-finish-load', () => {
       if (!documentReady || !approvedOrigin()) return

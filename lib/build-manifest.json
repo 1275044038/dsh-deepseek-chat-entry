@@ -26,14 +26,15 @@
     "src/protocol.ts": "322c95016ed4a9f73480026669b4850458e4d0e3d908f3a8583c69b4f829e79f",
     "src/server.ts": "40635247eaff8b15b51ad041c78ad391683e39832e5310470038b0d068542d92",
     "src/settings-section.tsx": "81b4d76aa46750b2797611fb70629b351a818ed02ec48945a90c96072404bacb",
-    "src/styles.ts": "e01a4a3d2c340fc4e7d986f3a47bd636676e0b510d4dd77fd765660a0c2b7b14",
-    "src/web-surface.tsx": "0c32de69f7792de03a96857637f5906d1012d2cde0b6a91dde1e6fe390777c62",
+    "src/styles.ts": "dc91f83a4adb6c4cf38754da094cb791b57bdcd0dc2cce6b62b8439f7d5a3b1b",
+    "src/web-surface.tsx": "f2c56dbc2a91130d09151aaf37dd471ed2814e24fee3b804d853e6bfc9750a73",
+    "src/website-notice.ts": "406f7fd499a7193a4b5ec5c5c2d2bceb39ba314679190963a45dc2d473ec9a75",
     "src/website-session-store.ts": "b2ec8fce6c219ba2227429534617476eecdc9f1fd6735813f4d11a9c62be6338",
     "src/website-session.ts": "f2434fafc40adb15b5f16fc8b6152bd8df7e85f5210330a1337502c9a08136d8",
     "tsconfig.json": "1ad0b3b39537564a180dc7f4084ceb3098b567f509320c77d71bc37aaf4f1879"
   },
   "artifacts": {
-    "lib/client.js": "6a11285b3963b34c6b2e12404fc10bc8797c93a66227527d56eea21ce43ff46b",
+    "lib/client.js": "35b53f91f0d339cf5a52c4f63a70aec17ce48d0cfbd82a685545c4fc7b8a489d",
     "lib/index.js": "d1ad767143fe255d21ca774dfdc23ed7abc31d3177da4ba013ad4d39aff1112e",
     "lib/types/authorization.d.ts": "d00a729326332db2f54a4821e855f13f144b89385f10b9cecbb694534c26e615",
     "lib/types/bridge.d.ts": "30cdeb22b99f5e3e588539fb8024d42d1948f9191e79cd54c0d1655967f1c902",
@@ -48,6 +49,7 @@
     "lib/types/settings-section.d.ts": "f47123b02ce9ca4a8ba0a3f2d628b3bb4b7fd8c58b2f5381c186b4590669930b",
     "lib/types/styles.d.ts": "3d18ad508cb9ad2573e72901e316eec284a13a05e8ee694b28303aadc408386f",
     "lib/types/web-surface.d.ts": "d37b79dd1d56d08f1233c5d4161324418a36ec00b63a8302e6260df4219297b5",
+    "lib/types/website-notice.d.ts": "d99fb7edb68c3736f97b9eaeeb98dc1f976e33b461ac90ea789e5d63597b5a68",
     "lib/types/website-session-store.d.ts": "f295c3566ed2f796d1d53d58ec1bd31c89c7862fe1f0d39ea9e3cd3b55239bd3",
     "lib/types/website-session.d.ts": "5ded232b24dd72e7b3c5f0ff505ba0aa818cbde14be7e2099bbbf262ec395a2b"
   }
