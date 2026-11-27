@@ -20,7 +20,18 @@
 4. 未登录或 token 过期时会优雅报错并阻止发送，提示打开聊天面板刷新登录。
 
 ## 安装
-在 DSH 桌面版（0.2.2 线）插件管理中安装 npm 包 `dsh-deepseek-chat-entry`。
+在 DSH 桌面版（0.2.2 线）的插件管理里填入下面任意一种 spec（任选其一）：
+
+| 方式 | 填入内容 |
+| --- | --- |
+| npm 包 | `dsh-deepseek-chat-entry` |
+| Release 压缩包（直链） | `https://github.com/1275044038/dsh-deepseek-chat-entry/releases/download/v0.1.0/dsh-deepseek-chat-entry-0.1.0.tgz` |
+| 本地压缩包 | 该 `.tgz` 的**绝对路径**（如 `D:\dsh-deepseek-chat-entry-0.1.0.tgz`） |
+| Git 仓库 | `https://github.com/1275044038/dsh-deepseek-chat-entry` |
+
+本地路径会被插件管理器拒绝，除非是绝对路径（相对路径报 `a local path must be absolute`）；
+URL 必须以 git 仓库或 `.tgz`/`.tar.gz` 结尾（否则报 `a URL must point at a git repository or a tarball`）。
+Git 安装方式需要本机能构建（会跑 `pnpm install` / 构建脚本），Release 压缩包已含预构建产物，开箱即用。
 
 ## 限制
 - 仅 DSH 桌面版可用；纯 Web 环境不显示入口（运行时门控，官方无安装期拒绝机制）。
@@ -55,7 +66,17 @@ https://chat.deepseek.com website while keeping the native DSH session list, rig
   @-reference feature reads only the single conversation you explicitly select to produce a summary; the
   website token stays Host-side and is never exposed to the model.
 
-Install `dsh-deepseek-chat-entry` from the DSH Desktop (0.2.2 line) plugin manager.
+Install from the DSH Desktop (0.2.2 line) plugin manager with any one of these specs:
+
+| Form | Spec |
+| --- | --- |
+| npm package | `dsh-deepseek-chat-entry` |
+| Release tarball URL | `https://github.com/1275044038/dsh-deepseek-chat-entry/releases/download/v0.1.0/dsh-deepseek-chat-entry-0.1.0.tgz` |
+| Local tarball | the **absolute** path of that `.tgz` |
+| Git repository | `https://github.com/1275044038/dsh-deepseek-chat-entry` |
+
+A local path must be absolute, and a URL must point at a git repository or a tarball ending in
+`.tgz`/`.tar.gz`. The git form builds on your machine; the release tarball ships prebuilt.
 
 ## License
 MIT © 1275044038
